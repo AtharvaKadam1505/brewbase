@@ -62,7 +62,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </nav>
 
         <div className="p-4 border-t border-border-light flex items-center gap-3">
-          <UserButton afterSignOutUrl="/" />
+          <UserButton />
           <div className="min-w-0">
             <p className="text-sm font-medium text-text-light truncate">
               {clerkUser?.firstName || 'Creator'}
@@ -86,7 +86,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <Icon className="w-4 h-4 text-brand-primary" />
             </Link>
           ))}
-          <UserButton afterSignOutUrl="/" />
+          <UserButton />
         </div>
       </div>
 
