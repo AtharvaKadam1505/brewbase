@@ -66,10 +66,17 @@ export default async function AnalyticsPage() {
   // Group payments by date string YYYY-MM-DD
   const dayMap: Record<string, { amount: number; count: number }> = {}
   for (const p of payments) {
-    const dateStr = new Date(p.created_at).toISOString().split('T')[0]
-    if (!dayMap[dateStr]) dayMap[dateStr] = { amount: 0, count: 0 }
-    dayMap[dateStr].amount += p.amount
-    dayMap[dateStr].count  += 1
+    try {
+      if (!p.created_at) continue
+      const d = new Date(p.created_at)
+      if (isNaN(d.getTime())) continue
+      const dateStr = d.toISOString().split('T')[0]
+      if (!dayMap[dateStr]) dayMap[dateStr] = { amount: 0, count: 0 }
+      dayMap[dateStr].amount += p.amount
+      dayMap[dateStr].count  += 1
+    } catch {
+      continue
+    }
   }
 
   const daily_data: DailyRevenue[] = Object.entries(dayMap)

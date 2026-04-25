@@ -20,11 +20,16 @@ export default function AnalyticsCharts({ dailyData }: AnalyticsChartsProps) {
   // Fill missing days with zeros for a clean chart
   const filledData: DailyRevenue[] = []
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    const dateStr = d.toISOString().split('T')[0]
-    const existing = filtered.find((f) => f.date === dateStr)
-    filledData.push(existing || { date: dateStr, amount: 0, count: 0 })
+    try {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      if (isNaN(d.getTime())) continue
+      const dateStr = d.toISOString().split('T')[0]
+      const existing = filtered.find((f) => f.date === dateStr)
+      filledData.push(existing || { date: dateStr, amount: 0, count: 0 })
+    } catch {
+      continue
+    }
   }
 
   const totalInRange = filledData.reduce((s, d) => s + d.amount, 0)

@@ -20,12 +20,23 @@ interface RevenueChartProps {
   type?: 'area' | 'bar'
 }
 
+function safeFormat(dateStr: string | undefined | null, fmt: string): string {
+  if (!dateStr) return ''
+  try {
+    const parsed = parseISO(dateStr)
+    if (isNaN(parsed.getTime())) return ''
+    return format(parsed, fmt)
+  } catch {
+    return ''
+  }
+}
+
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-white border border-border-light rounded-xl shadow-lg px-4 py-3 text-sm">
       <p className="font-medium text-text-light mb-1">
-        {label ? format(parseISO(label), 'MMM d, yyyy') : ''}
+        {label ? safeFormat(label, 'MMM d, yyyy') : ''}
       </p>
       {payload.map((p: any) => (
         <p key={p.dataKey} style={{ color: p.color }} className="flex items-center gap-2">
@@ -48,11 +59,13 @@ function formatYAxis(value: number) {
 }
 
 export function RevenueAreaChart({ data }: RevenueChartProps) {
-  const formatted = data.map((d) => ({
-    ...d,
-    dateLabel: d.date,
-    displayDate: format(parseISO(d.date), 'MMM d'),
-  }))
+  const formatted = data
+    .filter((d) => d.date && !isNaN(new Date(d.date).getTime()))
+    .map((d) => ({
+      ...d,
+      dateLabel: d.date,
+      displayDate: safeFormat(d.date, 'MMM d'),
+    }))
 
   return (
     <ResponsiveContainer width="100%" height={260}>
@@ -99,10 +112,12 @@ export function RevenueAreaChart({ data }: RevenueChartProps) {
 }
 
 export function TipsBarChart({ data }: RevenueChartProps) {
-  const formatted = data.map((d) => ({
-    ...d,
-    displayDate: format(parseISO(d.date), 'MMM d'),
-  }))
+  const formatted = data
+    .filter((d) => d.date && !isNaN(new Date(d.date).getTime()))
+    .map((d) => ({
+      ...d,
+      displayDate: safeFormat(d.date, 'MMM d'),
+    }))
 
   return (
     <ResponsiveContainer width="100%" height={200}>
