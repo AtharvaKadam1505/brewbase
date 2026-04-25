@@ -37,6 +37,19 @@ export default async function DashboardPage() {
   }) || []
   const monthlyEarnings = thisMonth.reduce((sum, p) => sum + (p.amount || 0), 0)
 
+  // Count unique supporters (distinct user_ids, not payment rows)
+  const uniqueSupporterIds = new Set(
+    (payments || []).filter(p => p.user_id).map(p => p.user_id)
+  )
+  const uniqueMonthlyIds = new Set(
+    thisMonth.filter(p => p.user_id).map(p => p.user_id)
+  )
+  // Add anonymous payments as individual unique supporters
+  const anonTotal   = (payments || []).filter(p => !p.user_id).length
+  const anonMonthly = thisMonth.filter(p => !p.user_id).length
+  const totalSupporters   = uniqueSupporterIds.size + anonTotal
+  const monthlySupporters = uniqueMonthlyIds.size  + anonMonthly
+
   const recentPayments: PublicPayment[] = (payments || []).slice(0, 5).map((p: any) => ({
     id: p.id || Math.random().toString(),
     supporter_name: p.is_anonymous ? null : p.users?.username || null,
@@ -62,14 +75,14 @@ export default async function DashboardPage() {
     },
     {
       label: 'Total supporters',
-      value: payments?.length || 0,
+      value: totalSupporters,
       icon: <Users className="w-5 h-5" />,
       color: 'text-blue-600',
       bg: 'bg-blue-100',
     },
     {
       label: 'This month',
-      value: thisMonth.length,
+      value: monthlySupporters,
       icon: <Coffee className="w-5 h-5" />,
       color: 'text-brand-secondary',
       bg: 'bg-yellow-100',

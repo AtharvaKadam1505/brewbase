@@ -25,16 +25,30 @@ export default async function ExplorePage() {
     .order('created_at', { ascending: false })
     .limit(50)
 
-  // Get support counts for each creator
+  // Get unique supporter counts per creator (distinct user_ids, not payment rows)
   const creatorIds = (creators || []).map((c) => c.id)
   const { data: paymentCounts } = await supabase
     .from('payments')
-    .select('creator_id')
+    .select('creator_id, user_id')
     .in('creator_id', creatorIds.length ? creatorIds : ['none'])
 
-  const countMap: Record<string, number> = {}
+  // Count unique supporters per creator:
+  // - logged-in supporters: count distinct user_id
+  // - anonymous/guest payments: each counts as 1 unique supporter
+  const supporterSets: Record<string, Set<string>> = {}
+  let anonCounter = 0
   for (const p of paymentCounts || []) {
-    countMap[p.creator_id] = (countMap[p.creator_id] || 0) + 1
+    if (!supporterSets[p.creator_id]) supporterSets[p.creator_id] = new Set()
+    if (p.user_id) {
+      supporterSets[p.creator_id].add(p.user_id)
+    } else {
+      // anonymous — use a unique key so it doesn't merge with others
+      supporterSets[p.creator_id].add(`anon_${anonCounter++}`)
+    }
+  }
+  const countMap: Record<string, number> = {}
+  for (const [creatorId, set] of Object.entries(supporterSets)) {
+    countMap[creatorId] = set.size
   }
 
   return (

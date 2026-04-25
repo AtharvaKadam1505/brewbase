@@ -42,11 +42,17 @@ export default async function CreatorProfilePage({ params }: Props) {
 
   if (!creator) notFound()
 
-  // Supporter stats
-  const { count: supporterCount } = await supabase
+  // Unique supporter count (distinct user_ids, not payment row count)
+  const { data: supporterRows } = await supabase
     .from('payments')
-    .select('*', { count: 'exact', head: true })
+    .select('user_id')
     .eq('creator_id', creator.id)
+
+  const uniqueIds = new Set(
+    (supporterRows || []).filter(p => p.user_id).map(p => p.user_id)
+  )
+  const anonCount     = (supporterRows || []).filter(p => !p.user_id).length
+  const supporterCount = uniqueIds.size + anonCount
 
   const { data: topSupporters } = await supabase
     .from('payments')
