@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { saveUserProfile, checkUsernameAvailable } from '@/actions/user'
 import { Coffee, ArrowRight, Loader2, CheckCircle } from 'lucide-react'
 
 export default function OnboardingPage() {
@@ -17,30 +17,25 @@ export default function OnboardingPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // Pre-fill username from Clerk profile
+  // Pre-fill from Clerk profile
   useEffect(() => {
     if (!clerkUser) return
-    const suggested = clerkUser.username ||
+    const suggested =
+      clerkUser.username ||
       clerkUser.firstName?.toLowerCase().replace(/\s+/g, '') ||
       ''
     setUsername(suggested)
   }, [clerkUser])
 
-  // Check username availability with debounce
+  // Check availability with debounce
   useEffect(() => {
     if (!username || username.length < 3) { setAvailable(null); return }
-
     const timer = setTimeout(async () => {
       setChecking(true)
-      const { data } = await supabase
-        .from('users')
-        .select('id')
-        .eq('username', username)
-        .single()
-      setAvailable(!data)
+      const isAvailable = await checkUsernameAvailable(username)
+      setAvailable(isAvailable)
       setChecking(false)
     }, 500)
-
     return () => clearTimeout(timer)
   }, [username])
 
@@ -50,19 +45,12 @@ export default function OnboardingPage() {
     setSaving(true)
 
     try {
-      // Upsert user into Supabase (in case webhook hasn't fired yet)
-      const { error: upsertError } = await supabase
-        .from('users')
-        .upsert({
-          clerk_id: clerkUser.id,
-          username,
-          bio,
-          email: clerkUser.emailAddresses[0]?.emailAddress || '',
-          avatar_url: clerkUser.imageUrl || null,
-        }, { onConflict: 'clerk_id' })
-
-      if (upsertError) throw new Error(upsertError.message)
-
+      await saveUserProfile({
+        username,
+        bio,
+        email: clerkUser.emailAddresses[0]?.emailAddress || '',
+        avatarUrl: clerkUser.imageUrl || null,
+      })
       router.push('/dashboard')
     } catch (err: any) {
       setError(err.message || 'Something went wrong. Please try again.')
@@ -80,7 +68,6 @@ export default function OnboardingPage() {
 
   return (
     <div className="min-h-screen bg-surface-light flex flex-col items-center justify-center px-4">
-      {/* Logo */}
       <div className="flex items-center gap-2 mb-10">
         <div className="w-10 h-10 rounded-xl bg-brand-primary flex items-center justify-center">
           <Coffee className="w-5 h-5 text-white" />
@@ -90,7 +77,6 @@ export default function OnboardingPage() {
 
       <div className="w-full max-w-md">
         <div className="card p-8">
-          {/* Header */}
           <div className="mb-6">
             <h1 className="font-display text-2xl font-bold text-text-light">
               Set up your creator page 🎉
@@ -100,7 +86,7 @@ export default function OnboardingPage() {
             </p>
           </div>
 
-          {/* Username field */}
+          {/* Username */}
           <div className="mb-4">
             <label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1.5 block">
               Username
@@ -121,7 +107,6 @@ export default function OnboardingPage() {
                 maxLength={30}
                 autoFocus
               />
-              {/* Availability indicator */}
               <div className="absolute right-3 top-1/2 -translate-y-1/2">
                 {checking && <Loader2 className="w-4 h-4 text-text-muted animate-spin" />}
                 {!checking && available === true && <CheckCircle className="w-4 h-4 text-green-500" />}
@@ -131,17 +116,17 @@ export default function OnboardingPage() {
               </div>
             </div>
             <p className="text-xs text-text-muted mt-1">
-              Only lowercase letters, numbers and underscores. Min 3 characters.
+              Lowercase letters, numbers, underscores only. Min 3 characters.
             </p>
             {available === true && username.length >= 3 && (
               <p className="text-xs text-green-600 mt-1 font-medium">✓ Available!</p>
             )}
           </div>
 
-          {/* Bio field */}
+          {/* Bio */}
           <div className="mb-6">
             <label className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1.5 block">
-              Bio <span className="normal-case text-text-muted font-normal">(optional)</span>
+              Bio <span className="normal-case font-normal text-text-muted">(optional)</span>
             </label>
             <textarea
               value={bio}

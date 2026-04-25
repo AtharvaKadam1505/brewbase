@@ -2,17 +2,23 @@
 
 import { useState, useEffect } from 'react'
 import { useUser } from '@clerk/nextjs'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Loader2, Save, User, Link as LinkIcon } from 'lucide-react'
+import { saveUserProfile, checkUsernameAvailable } from '@/actions/user'
+import { Loader2, Save, User, Link as LinkIcon, CheckCircle } from 'lucide-react'
 
 export default function SettingsPage() {
   const { user: clerkUser } = useUser()
+  const router = useRouter()
   const [username, setUsername] = useState('')
   const [bio, setBio] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [available, setAvailable] = useState<boolean | null>(null)
+  const [originalUsername, setOriginalUsername] = useState('')
 
   useEffect(() => {
     if (!clerkUser) return
@@ -25,44 +31,47 @@ export default function SettingsPage() {
         if (data) {
           setUsername(data.username || '')
           setBio(data.bio || '')
+          setOriginalUsername(data.username || '')
         }
         setLoading(false)
       })
   }, [clerkUser])
 
+  // Check availability when username changes (skip if unchanged)
+  useEffect(() => {
+    if (!username || username.length < 3) { setAvailable(null); return }
+    if (username === originalUsername) { setAvailable(true); return }
+
+    const timer = setTimeout(async () => {
+      setChecking(true)
+      const isAvailable = await checkUsernameAvailable(username)
+      setAvailable(isAvailable)
+      setChecking(false)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [username, originalUsername])
+
   const handleSave = async () => {
     if (!clerkUser) return
+    if (available === false) { setError('Username already taken.'); return }
     setError('')
     setSaving(true)
 
-    // Check username uniqueness
-    if (username) {
-      const { data: existing } = await supabase
-        .from('users')
-        .select('id')
-        .eq('username', username)
-        .neq('clerk_id', clerkUser.id)
-        .single()
-
-      if (existing) {
-        setError('Username already taken. Please choose another.')
-        setSaving(false)
-        return
-      }
-    }
-
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({ username, bio })
-      .eq('clerk_id', clerkUser.id)
-
-    if (updateError) {
-      setError('Failed to save. Please try again.')
-    } else {
+    try {
+      await saveUserProfile({
+        username,
+        bio,
+        email: clerkUser.emailAddresses[0]?.emailAddress || '',
+        avatarUrl: clerkUser.imageUrl || null,
+      })
+      setOriginalUsername(username)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
+    } catch (err: any) {
+      setError(err.message || 'Failed to save. Please try again.')
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   if (loading) {
@@ -81,7 +90,7 @@ export default function SettingsPage() {
       <div className="card p-6 space-y-6">
         {/* Username */}
         <div>
-          <label className="text-sm font-medium text-text-light mb-1.5 block flex items-center gap-2">
+          <label className="text-sm font-medium text-text-light mb-1.5 flex items-center gap-2">
             <User className="w-4 h-4 text-brand-primary" /> Username
           </label>
           <div className="relative">
@@ -91,19 +100,29 @@ export default function SettingsPage() {
             <input
               type="text"
               value={username}
-              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              onChange={(e) => {
+                setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))
+                setAvailable(null)
+              }}
               className="input pl-28"
               placeholder="yourname"
             />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              {checking && <Loader2 className="w-4 h-4 text-text-muted animate-spin" />}
+              {!checking && available === true && username !== originalUsername && (
+                <CheckCircle className="w-4 h-4 text-green-500" />
+              )}
+              {!checking && available === false && (
+                <span className="text-xs text-red-500 font-medium">Taken</span>
+              )}
+            </div>
           </div>
           <p className="text-xs text-text-muted mt-1">Only lowercase letters, numbers and underscores.</p>
         </div>
 
         {/* Bio */}
         <div>
-          <label className="text-sm font-medium text-text-light mb-1.5 block">
-            Bio
-          </label>
+          <label className="text-sm font-medium text-text-light mb-1.5 block">Bio</label>
           <textarea
             value={bio}
             onChange={(e) => setBio(e.target.value)}
@@ -119,7 +138,6 @@ export default function SettingsPage() {
             {error}
           </p>
         )}
-
         {saved && (
           <p className="text-sm text-green-600 bg-green-50 border border-green-100 rounded-xl px-4 py-2">
             ✅ Profile saved successfully!
@@ -128,8 +146,8 @@ export default function SettingsPage() {
 
         <button
           onClick={handleSave}
-          disabled={saving}
-          className="btn-primary flex items-center gap-2"
+          disabled={saving || available === false}
+          className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? (
             <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>
