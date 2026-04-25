@@ -23,62 +23,65 @@ export default async function AnalyticsPage() {
 
   if (!user) redirect('/onboarding')
 
-  // All payments
+  // Fetch ALL payments directly from payments table — no views
+  const ninetyDaysAgo = new Date()
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+
   const { data: allPayments } = await supabase
     .from('payments')
-    .select('amount, created_at, user_id')
+    .select('id, amount, created_at, user_id')
     .eq('creator_id', user.id)
     .order('created_at', { ascending: true })
 
-  const now = new Date()
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-  const startOfWeek = new Date(now)
-  startOfWeek.setDate(now.getDate() - 7)
-  const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-
   const payments = allPayments || []
 
-  const total_revenue = payments.reduce((s, p) => s + p.amount, 0)
-  const monthly = payments.filter((p) => new Date(p.created_at) >= startOfMonth)
-  const weekly = payments.filter((p) => new Date(p.created_at) >= startOfWeek)
-  const prevMonth = payments.filter((p) => {
+  // Date boundaries
+  const now            = new Date()
+  const startOfMonth   = new Date(now.getFullYear(), now.getMonth(), 1)
+  const startOfWeek    = new Date(now); startOfWeek.setDate(now.getDate() - 7)
+  const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const prevMonthEnd   = new Date(now.getFullYear(), now.getMonth(), 0)
+
+  // Computed stats
+  const total_revenue       = payments.reduce((s, p) => s + p.amount, 0)
+  const monthly             = payments.filter(p => new Date(p.created_at) >= startOfMonth)
+  const weekly              = payments.filter(p => new Date(p.created_at) >= startOfWeek)
+  const prevMonth           = payments.filter(p => {
     const d = new Date(p.created_at)
     return d >= prevMonthStart && d <= prevMonthEnd
   })
-
-  const monthly_revenue = monthly.reduce((s, p) => s + p.amount, 0)
-  const weekly_revenue = weekly.reduce((s, p) => s + p.amount, 0)
+  const monthly_revenue     = monthly.reduce((s, p) => s + p.amount, 0)
+  const weekly_revenue      = weekly.reduce((s, p) => s + p.amount, 0)
   const prev_monthly_revenue = prevMonth.reduce((s, p) => s + p.amount, 0)
-
-  const revenueGrowth = prev_monthly_revenue === 0
+  const revenueGrowth       = prev_monthly_revenue === 0
     ? 100
     : Math.round(((monthly_revenue - prev_monthly_revenue) / prev_monthly_revenue) * 100)
 
-  const uniqueSupporters = new Set(payments.filter((p) => p.user_id).map((p) => p.user_id))
-  const monthlyUnique = new Set(monthly.filter((p) => p.user_id).map((p) => p.user_id))
-  const avg_donation = payments.length ? Math.round(total_revenue / payments.length) : 0
-  const top_donation = payments.length ? Math.max(...payments.map((p) => p.amount)) : 0
+  const uniqueSupporters  = new Set(payments.filter(p => p.user_id).map(p => p.user_id))
+  const monthlyUnique     = new Set(monthly.filter(p => p.user_id).map(p => p.user_id))
+  const avg_donation      = payments.length ? Math.round(total_revenue / payments.length) : 0
+  const top_donation      = payments.length ? Math.max(...payments.map(p => p.amount)) : 0
 
-  // Daily revenue for charts (last 90 days)
-  const { data: dailyRows } = await supabase
-    .from('daily_revenue')
-    .select('date, amount, count')
-    .eq('creator_id', user.id)
-    .order('date', { ascending: true })
+  // ── Build daily_data from payments directly (no view needed) ──────────────
+  // Group payments by date string YYYY-MM-DD
+  const dayMap: Record<string, { amount: number; count: number }> = {}
+  for (const p of payments) {
+    const dateStr = new Date(p.created_at).toISOString().split('T')[0]
+    if (!dayMap[dateStr]) dayMap[dateStr] = { amount: 0, count: 0 }
+    dayMap[dateStr].amount += p.amount
+    dayMap[dateStr].count  += 1
+  }
 
-  const daily_data: DailyRevenue[] = (dailyRows || []).map((r: any) => ({
-    date: r.date,
-    amount: r.amount,
-    count: r.count,
-  }))
+  const daily_data: DailyRevenue[] = Object.entries(dayMap)
+    .map(([date, val]) => ({ date, amount: val.amount, count: val.count }))
+    .sort((a, b) => a.date.localeCompare(b.date))
 
   const summary: AnalyticsSummary = {
     total_revenue,
     monthly_revenue,
     weekly_revenue,
-    total_supporters: uniqueSupporters.size,
-    monthly_supporters: monthlyUnique.size,
+    total_supporters:    uniqueSupporters.size,
+    monthly_supporters:  monthlyUnique.size,
     avg_donation,
     top_donation,
     daily_data,
@@ -86,7 +89,6 @@ export default async function AnalyticsPage() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      {/* Header */}
       <div className="mb-8">
         <h1 className="font-display text-3xl font-bold text-text-light flex items-center gap-3">
           <BarChart2 className="w-8 h-8 text-brand-primary" />
@@ -95,7 +97,6 @@ export default async function AnalyticsPage() {
         <p className="text-text-muted mt-1">Track your earnings and supporter trends.</p>
       </div>
 
-      {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           label="Total revenue"
@@ -131,7 +132,6 @@ export default async function AnalyticsPage() {
         />
       </div>
 
-      {/* Secondary stats */}
       <div className="grid grid-cols-2 gap-4 mb-8">
         <StatCard
           label="Average tip"
@@ -149,7 +149,6 @@ export default async function AnalyticsPage() {
         />
       </div>
 
-      {/* Charts */}
       <AnalyticsCharts dailyData={summary.daily_data} />
     </div>
   )
