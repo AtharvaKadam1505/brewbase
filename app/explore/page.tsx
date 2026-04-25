@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { supabaseAdmin } from '@/lib/supabase'
 import { getInitials } from '@/lib/utils'
 import Link from 'next/link'
