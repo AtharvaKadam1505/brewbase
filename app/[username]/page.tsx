@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
+import { auth } from '@clerk/nextjs/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import PaymentForm from '@/components/payment/PaymentForm'
 import SupportFeed from '@/components/feed/SupportFeed'
@@ -33,6 +34,9 @@ export default async function CreatorProfilePage({ params }: Props) {
   const { username } = await params
   const supabase = supabaseAdmin()
 
+  // Get logged-in user (if any)
+  const { userId: clerkId } = await auth()
+
   const { data: creator } = await supabase
     .from('users')
     .select('id, username, bio, avatar_url, created_at, goal_amount, goal_label, thank_you_msg')
@@ -40,6 +44,47 @@ export default async function CreatorProfilePage({ params }: Props) {
     .single()
 
   if (!creator) notFound()
+
+  // Get viewer's Supabase id
+  let viewerDbId: string | null = null
+  if (clerkId) {
+    const { data: viewer } = await supabase
+      .from('users')
+      .select('id')
+      .eq('clerk_id', clerkId)
+      .single()
+    viewerDbId = viewer?.id || null
+  }
+
+  // Check if viewer is the creator themselves
+  const isOwner = viewerDbId === creator.id
+
+  // Check if viewer is a supporter (has made at least one payment to this creator)
+  let isSupporter = false
+  if (viewerDbId && !isOwner) {
+    const { data: payment } = await supabase
+      .from('payments')
+      .select('id')
+      .eq('creator_id', creator.id)
+      .eq('user_id', viewerDbId)
+      .limit(1)
+      .single()
+    isSupporter = !!payment
+  }
+
+  // Owner and supporters can see all posts — others only see public ones
+  const canSeeAll = isOwner || isSupporter
+
+  // Fetch posts accordingly
+  const postsQuery = supabase
+    .from('posts')
+    .select('id, title, content, is_public, created_at')
+    .eq('creator_id', creator.id)
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  const { data: allPosts } = await postsQuery
+  const posts = allPosts || []
 
   // Unique supporter count
   const { data: supporterRows } = await supabase
@@ -59,16 +104,6 @@ export default async function CreatorProfilePage({ params }: Props) {
     .eq('show_amount', true)
     .order('amount', { ascending: false })
     .limit(3)
-
-  // All posts — public ones shown fully, locked ones shown as blurred previews
-  const { data: allPosts } = await supabase
-    .from('posts')
-    .select('id, title, content, is_public, created_at')
-    .eq('creator_id', creator.id)
-    .order('created_at', { ascending: false })
-    .limit(10)
-
-  const posts = allPosts || []
 
   return (
     <div className="min-h-screen bg-surface-light">
@@ -112,6 +147,18 @@ export default async function CreatorProfilePage({ params }: Props) {
               <span><strong className="text-text-light">{posts.length}</strong> posts</span>
             </div>
           </div>
+
+          {/* Supporter badge */}
+          {isSupporter && (
+            <div className="mt-3 inline-flex items-center gap-1.5 bg-orange-100 text-brand-primary text-xs font-medium px-3 py-1 rounded-full">
+              <Coffee className="w-3 h-3" /> You&apos;re a supporter ☕
+            </div>
+          )}
+          {isOwner && (
+            <div className="mt-3 inline-flex items-center gap-1.5 bg-green-100 text-green-700 text-xs font-medium px-3 py-1 rounded-full">
+              ✏️ Your page
+            </div>
+          )}
         </div>
       </div>
 
@@ -144,67 +191,73 @@ export default async function CreatorProfilePage({ params }: Props) {
                     .trim()
                     .slice(0, 160)
 
-                  if (post.is_public) {
-                    // ── Public post — fully visible ──────────────────────
+                  // ── Locked post — viewer is NOT a supporter ───────────
+                  if (!post.is_public && !canSeeAll) {
                     return (
-                      <Link
-                        key={post.id}
-                        href={`/${creator.username}/posts/${post.id}`}
-                        className="card p-5 block hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group"
-                      >
+                      <div key={post.id} className="card p-5 relative overflow-hidden">
                         <div className="flex items-center gap-2 mb-2">
-                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">
-                            <Globe className="w-3 h-3" /> Public
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-brand-primary">
+                            <Lock className="w-3 h-3" /> Supporters only
                           </span>
                           <span className="text-xs text-text-muted">
                             {formatRelativeTime(post.created_at)}
                           </span>
                         </div>
-                        <h3 className="font-display font-bold text-text-light text-base mb-1 group-hover:text-brand-primary transition-colors">
+                        <h3 className="font-display font-bold text-text-light text-base mb-2">
                           {post.title}
                         </h3>
-                        <p className="text-sm text-text-muted line-clamp-2 leading-relaxed">
-                          {preview}{preview.length === 160 ? '…' : ''}
-                        </p>
-                        <p className="text-xs text-brand-primary mt-2 font-medium group-hover:underline">
-                          Read post →
-                        </p>
-                      </Link>
+                        {/* Blurred preview */}
+                        <div className="relative">
+                          <p
+                            className="text-sm text-text-muted line-clamp-2 leading-relaxed select-none"
+                            style={{ filter: 'blur(4px)', userSelect: 'none' }}
+                          >
+                            {preview}
+                          </p>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="flex items-center gap-2 bg-white/90 border border-border-light rounded-xl px-3 py-1.5 shadow-sm">
+                              <Lock className="w-3.5 h-3.5 text-brand-primary" />
+                              <span className="text-xs font-medium text-text-light">
+                                Support to unlock
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     )
                   }
 
-                  // ── Supporters only post — blurred preview ────────────
+                  // ── Public post OR viewer is supporter/owner ──────────
                   return (
-                    <div key={post.id} className="card p-5 relative overflow-hidden">
+                    <Link
+                      key={post.id}
+                      href={`/${creator.username}/posts/${post.id}`}
+                      className="card p-5 block hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group"
+                    >
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-brand-primary">
-                          <Lock className="w-3 h-3" /> Supporters only
-                        </span>
+                        {post.is_public ? (
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">
+                            <Globe className="w-3 h-3" /> Public
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-brand-primary">
+                            <Lock className="w-3 h-3" /> Supporters only
+                          </span>
+                        )}
                         <span className="text-xs text-text-muted">
                           {formatRelativeTime(post.created_at)}
                         </span>
                       </div>
-                      <h3 className="font-display font-bold text-text-light text-base mb-1">
+                      <h3 className="font-display font-bold text-text-light text-base mb-1 group-hover:text-brand-primary transition-colors">
                         {post.title}
                       </h3>
-
-                      {/* Blurred content preview */}
-                      <div className="relative">
-                        <p className="text-sm text-text-muted line-clamp-2 leading-relaxed select-none"
-                           style={{ filter: 'blur(4px)', userSelect: 'none' }}>
-                          {preview}{preview.length === 160 ? '…' : ''}
-                        </p>
-                        {/* Unlock overlay */}
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="flex items-center gap-2 bg-white/90 border border-border-light rounded-xl px-3 py-1.5 shadow-sm">
-                            <Lock className="w-3.5 h-3.5 text-brand-primary" />
-                            <span className="text-xs font-medium text-text-light">
-                              Support to read
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                      <p className="text-sm text-text-muted line-clamp-2 leading-relaxed">
+                        {preview}{preview.length === 160 ? '…' : ''}
+                      </p>
+                      <p className="text-xs text-brand-primary mt-2 font-medium group-hover:underline">
+                        Read post →
+                      </p>
+                    </Link>
                   )
                 })}
               </div>
