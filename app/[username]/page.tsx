@@ -5,10 +5,10 @@ import Image from 'next/image'
 import { supabaseAdmin } from '@/lib/supabase'
 import PaymentForm from '@/components/payment/PaymentForm'
 import SupportFeed from '@/components/feed/SupportFeed'
-import { getInitials } from '@/lib/utils'
-import { Coffee, Users, Heart } from 'lucide-react'
+import { getInitials, formatRelativeTime } from '@/lib/utils'
+import { Coffee, Users, Heart, Globe, Lock, PenLine } from 'lucide-react'
 import GoalProgress from '@/components/goal/GoalProgress'
-import PostCard from '@/components/posts/PostCard'
+import Link from 'next/link'
 import type { Metadata } from 'next'
 
 interface Props {
@@ -17,15 +17,12 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { username } = await params
-
   const { data: creator } = await supabaseAdmin()
     .from('users')
     .select('username, bio')
     .eq('username', username)
     .single()
-
   if (!creator) return { title: 'Creator not found' }
-
   return {
     title: `${creator.username} — BrewBase`,
     description: creator.bio || `Support ${creator.username} on BrewBase`,
@@ -44,18 +41,17 @@ export default async function CreatorProfilePage({ params }: Props) {
 
   if (!creator) notFound()
 
-  // Unique supporter count (distinct user_ids, not payment row count)
+  // Unique supporter count
   const { data: supporterRows } = await supabase
     .from('payments')
     .select('user_id')
     .eq('creator_id', creator.id)
 
-  const uniqueIds = new Set(
-    (supporterRows || []).filter(p => p.user_id).map(p => p.user_id)
-  )
-  const anonCount     = (supporterRows || []).filter(p => !p.user_id).length
+  const uniqueIds      = new Set((supporterRows || []).filter(p => p.user_id).map(p => p.user_id))
+  const anonCount      = (supporterRows || []).filter(p => !p.user_id).length
   const supporterCount = uniqueIds.size + anonCount
 
+  // Top supporters
   const { data: topSupporters } = await supabase
     .from('payments')
     .select('amount, is_anonymous, user_id, users!payments_user_id_fkey(username)')
@@ -64,21 +60,21 @@ export default async function CreatorProfilePage({ params }: Props) {
     .order('amount', { ascending: false })
     .limit(3)
 
-  // Fetch public posts
-  const { data: posts } = await supabase
+  // All posts — public ones shown fully, locked ones shown as blurred previews
+  const { data: allPosts } = await supabase
     .from('posts')
-    .select('*')
+    .select('id, title, content, is_public, created_at')
     .eq('creator_id', creator.id)
-    .eq('is_public', true)
     .order('created_at', { ascending: false })
-    .limit(5)
+    .limit(10)
+
+  const posts = allPosts || []
 
   return (
     <div className="min-h-screen bg-surface-light">
       {/* Header */}
       <div className="bg-gradient-to-b from-orange-100 to-surface-light border-b border-border-light">
         <div className="max-w-3xl mx-auto px-4 py-12 text-center">
-          {/* Avatar */}
           <div className="relative inline-block mb-4">
             {creator.avatar_url ? (
               <Image
@@ -112,8 +108,8 @@ export default async function CreatorProfilePage({ params }: Props) {
               <span><strong className="text-text-light">{supporterCount || 0}</strong> supporters</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <Coffee className="w-4 h-4 text-brand-secondary" />
-              <span>Accepting tips</span>
+              <PenLine className="w-4 h-4 text-brand-secondary" />
+              <span><strong className="text-text-light">{posts.length}</strong> posts</span>
             </div>
           </div>
         </div>
@@ -121,8 +117,9 @@ export default async function CreatorProfilePage({ params }: Props) {
 
       {/* Main content */}
       <div className="max-w-3xl mx-auto px-4 py-10 grid md:grid-cols-5 gap-8">
-        {/* Left: Feed */}
+        {/* Left column */}
         <div className="md:col-span-3 space-y-6">
+
           {/* Goal progress bar */}
           {creator.goal_amount && creator.goal_amount > 0 && (
             <GoalProgress
@@ -131,6 +128,89 @@ export default async function CreatorProfilePage({ params }: Props) {
               creatorId={creator.id}
             />
           )}
+
+          {/* Posts section */}
+          {posts.length > 0 && (
+            <div>
+              <h2 className="font-display text-xl font-bold text-text-light mb-3 flex items-center gap-2">
+                <PenLine className="w-5 h-5 text-brand-primary" /> Posts
+              </h2>
+              <div className="space-y-3">
+                {posts.map((post: any) => {
+                  const preview = post.content
+                    .replace(/#{1,6}\s/g, '')
+                    .replace(/\*\*/g, '')
+                    .replace(/\n/g, ' ')
+                    .trim()
+                    .slice(0, 160)
+
+                  if (post.is_public) {
+                    // ── Public post — fully visible ──────────────────────
+                    return (
+                      <Link
+                        key={post.id}
+                        href={`/${creator.username}/posts/${post.id}`}
+                        className="card p-5 block hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group"
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">
+                            <Globe className="w-3 h-3" /> Public
+                          </span>
+                          <span className="text-xs text-text-muted">
+                            {formatRelativeTime(post.created_at)}
+                          </span>
+                        </div>
+                        <h3 className="font-display font-bold text-text-light text-base mb-1 group-hover:text-brand-primary transition-colors">
+                          {post.title}
+                        </h3>
+                        <p className="text-sm text-text-muted line-clamp-2 leading-relaxed">
+                          {preview}{preview.length === 160 ? '…' : ''}
+                        </p>
+                        <p className="text-xs text-brand-primary mt-2 font-medium group-hover:underline">
+                          Read post →
+                        </p>
+                      </Link>
+                    )
+                  }
+
+                  // ── Supporters only post — blurred preview ────────────
+                  return (
+                    <div key={post.id} className="card p-5 relative overflow-hidden">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-brand-primary">
+                          <Lock className="w-3 h-3" /> Supporters only
+                        </span>
+                        <span className="text-xs text-text-muted">
+                          {formatRelativeTime(post.created_at)}
+                        </span>
+                      </div>
+                      <h3 className="font-display font-bold text-text-light text-base mb-1">
+                        {post.title}
+                      </h3>
+
+                      {/* Blurred content preview */}
+                      <div className="relative">
+                        <p className="text-sm text-text-muted line-clamp-2 leading-relaxed select-none"
+                           style={{ filter: 'blur(4px)', userSelect: 'none' }}>
+                          {preview}{preview.length === 160 ? '…' : ''}
+                        </p>
+                        {/* Unlock overlay */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="flex items-center gap-2 bg-white/90 border border-border-light rounded-xl px-3 py-1.5 shadow-sm">
+                            <Lock className="w-3.5 h-3.5 text-brand-primary" />
+                            <span className="text-xs font-medium text-text-light">
+                              Support to read
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Top supporters */}
           {topSupporters && topSupporters.length > 0 && (
             <div>
