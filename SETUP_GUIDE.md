@@ -293,4 +293,4 @@ Use any future expiry date and any 3-digit CVC.
 
 ---
 
-Built with ☕ using Next.js · Clerk · Supabase · Stripe
+Built with ☕ using Next.js · Clerk · Supabase · Razorpay

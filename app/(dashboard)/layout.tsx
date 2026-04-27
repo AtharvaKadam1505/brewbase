@@ -1,6 +1,6 @@
 import { UserButton } from '@clerk/nextjs'
 import Link from 'next/link'
-import { Coffee, LayoutDashboard, Settings, ExternalLink, Trophy, BarChart2 } from 'lucide-react'
+import { Coffee, LayoutDashboard, Settings, ExternalLink, Trophy, BarChart2, PenLine } from 'lucide-react'
 import { currentUser } from '@clerk/nextjs/server'
 import { supabaseAdmin } from '@/lib/supabase'
 
@@ -8,6 +8,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/analytics', label: 'Analytics', icon: BarChart2 },
   { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
+  { href: '/dashboard/posts', label: 'Posts', icon: PenLine },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 

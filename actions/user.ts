@@ -8,18 +8,24 @@ export async function saveUserProfile({
   bio,
   email,
   avatarUrl,
+  goalAmount,
+  goalLabel,
+  thankYouMsg,
 }: {
-  username: string
-  bio: string
-  email: string
-  avatarUrl: string | null
+  username:     string
+  bio:          string
+  email:        string
+  avatarUrl:    string | null
+  goalAmount?:  number | null
+  goalLabel?:   string | null
+  thankYouMsg?: string | null
 }) {
   const { userId } = await auth()
   if (!userId) throw new Error('Not authenticated')
 
   const supabase = supabaseAdmin()
 
-  // Check username is not taken by another user
+  // Check username not taken by another user
   const { data: existing } = await supabase
     .from('users')
     .select('id, clerk_id')
@@ -32,30 +38,30 @@ export async function saveUserProfile({
 
   const { error } = await supabase.from('users').upsert(
     {
-      clerk_id: userId,
+      clerk_id:      userId,
       username,
-      bio: bio || null,
+      bio:           bio          || null,
       email,
-      avatar_url: avatarUrl || null,
+      avatar_url:    avatarUrl    || null,
+      goal_amount:   goalAmount   ?? null,
+      goal_label:    goalLabel    ?? null,
+      thank_you_msg: thankYouMsg  ?? null,
     },
     { onConflict: 'clerk_id' }
   )
 
   if (error) throw new Error(error.message)
-
   return { success: true }
 }
 
 export async function checkUsernameAvailable(username: string): Promise<boolean> {
   const { userId } = await auth()
-
   const { data } = await supabaseAdmin()
     .from('users')
     .select('id, clerk_id')
     .eq('username', username)
     .single()
 
-  // Available if no row, or if it belongs to current user
   if (!data) return true
   if (userId && data.clerk_id === userId) return true
   return false

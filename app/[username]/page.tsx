@@ -7,6 +7,8 @@ import PaymentForm from '@/components/payment/PaymentForm'
 import SupportFeed from '@/components/feed/SupportFeed'
 import { getInitials } from '@/lib/utils'
 import { Coffee, Users, Heart } from 'lucide-react'
+import GoalProgress from '@/components/goal/GoalProgress'
+import PostCard from '@/components/posts/PostCard'
 import type { Metadata } from 'next'
 
 interface Props {
@@ -36,7 +38,7 @@ export default async function CreatorProfilePage({ params }: Props) {
 
   const { data: creator } = await supabase
     .from('users')
-    .select('*')
+    .select('id, username, bio, avatar_url, created_at, goal_amount, goal_label, thank_you_msg')
     .eq('username', username)
     .single()
 
@@ -61,6 +63,15 @@ export default async function CreatorProfilePage({ params }: Props) {
     .eq('show_amount', true)
     .order('amount', { ascending: false })
     .limit(3)
+
+  // Fetch public posts
+  const { data: posts } = await supabase
+    .from('posts')
+    .select('*')
+    .eq('creator_id', creator.id)
+    .eq('is_public', true)
+    .order('created_at', { ascending: false })
+    .limit(5)
 
   return (
     <div className="min-h-screen bg-surface-light">
@@ -112,6 +123,14 @@ export default async function CreatorProfilePage({ params }: Props) {
       <div className="max-w-3xl mx-auto px-4 py-10 grid md:grid-cols-5 gap-8">
         {/* Left: Feed */}
         <div className="md:col-span-3 space-y-6">
+          {/* Goal progress bar */}
+          {creator.goal_amount && creator.goal_amount > 0 && (
+            <GoalProgress
+              goalAmount={creator.goal_amount}
+              goalLabel={creator.goal_label}
+              creatorId={creator.id}
+            />
+          )}
           {/* Top supporters */}
           {topSupporters && topSupporters.length > 0 && (
             <div>

@@ -89,3 +89,20 @@ export interface Post {
   tier_id: string | null
   created_at: string
 }
+
+export interface Goal {
+  goal_amount:   number | null
+  goal_label:    string | null
+  thank_you_msg: string | null
+}
+
+export interface PostItem {
+  id:         string
+  creator_id: string
+  title:      string
+  content:    string
+  is_public:  boolean
+  cover_url:  string | null
+  created_at: string
+  updated_at: string
+}
